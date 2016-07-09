@@ -3,7 +3,6 @@ library(dplyr)
 library(class)
 library(gmodels)
 library(ggplot2)
-library(modeest)
 train <- read.csv("D:/amit/R/AnalyticsVidya/BigMart3/Train_UWu5bXk.csv", stringsAsFactors=FALSE)
 test <- read.csv("D:/amit/R/AnalyticsVidya/BigMart3/Test_u94Q5KV.csv", stringsAsFactors=FALSE)
 train$IsTrain <- TRUE
@@ -68,7 +67,7 @@ mean_weight_df <- combi %>%
   group_by(Item_Identifier) %>%
   summarize(avg_item_weight=mean(Item_Weight,na.rm=TRUE)) 
 
-
+###TRy this using match
 combi <- inner_join(combi,mean_weight_df)
 for (i in 1 : nrow(combi))
 {
@@ -137,19 +136,24 @@ train_fortrain=train[1:7000,]
 #train_fortrain$Item_Identifier <- NULL
 # 
 linearmodel1 <- lm(data=train_fortrain,Item_Outlet_Sales ~ Item_Weight + Item_Fat_Content+Item_Visibility+
-                     Item_MRP+Outlet_Size+Outlet_Location_Type+Outlet_Type+New_Item_Type)
+                   Item_MRP+Outlet_Size+Outlet_Location_Type+Outlet_Type+New_Item_Type)
+
 
 #linearmodel1 <- lm(data=train_fortrain,Item_Outlet_Sales ~ Item_MRP+Outlet_Size+Outlet_Type)
 Item_Outlet_Sales_Predict <- predict(linearmodel1,train_fortest)
 #CrossTable(Item_Outlet_Sales_Predict,train_fortest$Item_Outlet_Sales)
 summary(linearmodel1)
 summary(Item_Outlet_Sales_Predict)
-length(Item_Outlet_Sales_Predict)
+plot(linearmodel1)
 
 #Now applying model to actual test data
 Item_Outlet_Sales_Predict <- predict(linearmodel1,test)
+
+
+
+
 submission_df <- data.frame (Item_Identifier= test$Item_Identifier,
                        Outlet_Identifier=test$Outlet_Identifier,
                        Item_Outlet_Sales = Item_Outlet_Sales_Predict)
                        
-write.csv(submission_df,file="D:/amit/R/AnalyticsVidya/BigMart3/submission.csv",row.names=FALSE)
+#write.csv(submission_df,file="D:/amit/R/AnalyticsVidya/BigMart3/submission.csv",row.names=FALSE)
