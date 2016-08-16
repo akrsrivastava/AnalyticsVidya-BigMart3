@@ -13,6 +13,7 @@ library(rpart)
 library(car)
 library(gvlma)
 library(doParallel)
+library(dummies)
 
 train <- read.csv("D:/amit/Data Science/AnalyticsVidya/BigMart3/Train_UWu5bXk.csv", stringsAsFactors=FALSE)
 test <- read.csv("D:/amit/Data Science/AnalyticsVidya/BigMart3/Test_u94Q5KV.csv", stringsAsFactors=FALSE)
@@ -210,15 +211,15 @@ ggplot(subset(combi, IsTrain==TRUE)) + geom_bar(aes(x=Outlet_Size,y=Item_Outlet_
 
 
 #Create dummy Vars
-# dmy <- dummyVars("~.",combi,fullRank = TRUE)
+# dmy <- dummyVars("~.",combi[,-1],fullRank = TRUE)
 # combi <- as.data.frame(predict(dmy,combi))
 # corelation_df <- as.data.frame(cor(combi))
 #names(corelation_df) = c("Var1","Var2")
 #corelation_df[which(corelation_df[,]>0.5)]
-#Scale all numeric columns
-combi <- preProcess(combi) %>%
-          predict(combi) %>%
-          as.data.frame
+# #Scale all numeric columns
+# combi <- preProcess(combi) %>%
+#           predict(combi) %>%
+#           as.data.frame
 
 # column_index <- sapply(combi, is.numeric)
 # combi[column_index] <- lapply(combi[column_index], scale)
@@ -228,6 +229,7 @@ combi <- preProcess(combi) %>%
 # train_fortest=train[7001:8523,]
 # train_fortrain=train[1:7000,]
 set.seed(1)
+combi$Item_Identifier <- NULL
 train=combi[combi$IsTrain==TRUE,]
 test=combi[combi$IsTrain==FALSE,]
 train$IsTrain <- NULL
@@ -239,10 +241,83 @@ train_fortest=train[-inTrain,]
 linearmodel <- lm(data=train_fortrain,Item_Outlet_Sales ~ Item_Weight +  Item_Fat_Content + Item_Visibility +
                     Item_Type + Item_MRP + Outlet_Identifier + Outlet_Size + Outlet_Location_Type +
                     Outlet_Type + Item_Identifier_Code + AgeOfOutlet)
-Item_Outlet_Sales_Predict <- predict(linearmodel,test)
+#Predict Test Data Set
+Item_Outlet_Sales_Predict <- predict(linearmodel,train_fortest)
 
-RMSE(pred= Item_Outlet_Sales_Predict, obs=test$Item_Outlet_Sales)
+RMSE(pred= Item_Outlet_Sales_Predict, obs=train_fortest$Item_Outlet_Sales) #1159.762
 varimp_df <- data.frame(varImp(linearmodel))
+
+
+#PCA
+#Create dummy Vars
+# dmy <- dummyVars("~.",combi[,-1],fullRank = TRUE)
+# combi <- as.data.frame(predict(dmy,combi))
+pca.train_fortrain <- train_fortrain
+pca.train_fortest <- train_fortest
+
+
+pca.train_fortrain$Item_Outlet_Sales <- NULL
+pca.train_fortest$Item_Outlet_Sales <- NULL
+
+
+pca.train_fortrain <- dummy.data.frame(pca.train_fortrain, names = c("Item_Fat_Content","Item_Type",
+                                                   "Outlet_Establishment_Year","Outlet_Size",
+                                                   "Outlet_Location_Type","Outlet_Type","Outlet_Identifier","Item_Identifier_Code"))
+
+str(pca.train_fortrain)
+
+prin_comp <- prcomp(pca.train_fortrain, scale. = T)
+
+#outputs the mean of variables
+prin_comp$center
+
+#outputs the standard deviation of variables
+prin_comp$scale
+
+prin_comp$rotation
+prin_comp$rotation[1:5,1:4]
+biplot(prin_comp, scale = 0)
+
+#compute standard deviation of each principal component
+ std_dev <- prin_comp$sdev
+
+#compute variance
+ pr_var <- std_dev^2
+
+#check variance of first 10 components
+ pr_var[1:10]
+
+ prop_varex <- pr_var/sum(pr_var)
+ 
+ plot(prop_varex, xlab = "Principal Component",
+      ylab = "Proportion of Variance Explained",
+      type = "b")
+prin_comp$x
+
+#cumulative scree plot
+plot(cumsum(prop_varex), xlab = "Principal Component",
+       ylab = "Cumulative Proportion of Variance Explained",
+       type = "b")
+
+#add a training set with principal components
+train.data <- data.frame(Item_Outlet_Sales = train_fortrain$Item_Outlet_Sales, prin_comp$x)
+
+#we are interested in first 30 PCAs
+train.data <- train.data[,1:31]
+
+
+pca.linearmodel <- lm(data=train.data,Item_Outlet_Sales ~ .)
+
+pca.train_fortest <- dummy.data.frame(pca.train_fortest, names = c("Item_Fat_Content","Item_Type",
+                                                                     "Outlet_Establishment_Year","Outlet_Size",
+                                                                     "Outlet_Location_Type","Outlet_Type","Outlet_Identifier","Item_Identifier_Code"))
+test.data <- predict(prin_comp, newdata = pca.train_fortest)
+test.data <- as.data.frame(test.data)
+
+test.data <- test.data[,1:30]
+Item_Outlet_Sales_Predict<- predict(pca.linearmodel,  test.data)
+
+RMSE(pred= Item_Outlet_Sales_Predict, obs=train_fortest$Item_Outlet_Sales) #1159.809
 
 
 linearmodel_caret <- train(data=train_fortrain,Item_Outlet_Sales ~ Item_Weight +  Item_Fat_Content + Item_Visibility +
