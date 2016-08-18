@@ -14,6 +14,7 @@ library(car)
 library(gvlma)
 library(doParallel)
 library(dummies)
+library(Boruta)
 
 train <- read.csv("D:/amit/Data Science/AnalyticsVidya/BigMart3/Train_UWu5bXk.csv", stringsAsFactors=FALSE)
 test <- read.csv("D:/amit/Data Science/AnalyticsVidya/BigMart3/Test_u94Q5KV.csv", stringsAsFactors=FALSE)
@@ -209,34 +210,31 @@ ggplot(subset(combi, IsTrain==TRUE)) + geom_bar(aes(x=Item_Type,y=Item_Outlet_Sa
 
 ggplot(subset(combi, IsTrain==TRUE)) + geom_bar(aes(x=Outlet_Size,y=Item_Outlet_Sales),stat="summary",fun.y=mean)
 
+#Feature Selection with Boruta
+train_forBoruta <- dummy.data.frame(combi[combi$IsTrain==TRUE,], names = c("Item_Fat_Content","Item_Type",
+                                                                   "Outlet_Establishment_Year","Outlet_Size",
+                                                                   "Outlet_Location_Type","Outlet_Type","Outlet_Identifier","Item_Identifier_Code"))
+#Takes two hours
+#boruta.train <- Boruta(Item_Outlet_Sales~.-c(Item_Identifier,IsTrain), data = train_forBoruta, doTrace = 2)
 
-#Create dummy Vars
-# dmy <- dummyVars("~.",combi[,-1],fullRank = TRUE)
-# combi <- as.data.frame(predict(dmy,combi))
-# corelation_df <- as.data.frame(cor(combi))
-#names(corelation_df) = c("Var1","Var2")
-#corelation_df[which(corelation_df[,]>0.5)]
-# #Scale all numeric columns
-# combi <- preProcess(combi) %>%
-#           predict(combi) %>%
-#           as.data.frame
-
-# column_index <- sapply(combi, is.numeric)
-# combi[column_index] <- lapply(combi[column_index], scale)
 
 #Model building
 #Now Divide train into tow datsets to prepare and test regression model
 # train_fortest=train[7001:8523,]
 # train_fortrain=train[1:7000,]
 set.seed(1)
-combi$Item_Identifier <- NULL
+
 train=combi[combi$IsTrain==TRUE,]
 test=combi[combi$IsTrain==FALSE,]
-train$IsTrain <- NULL
-test$IsTrain <- NULL
+
 inTrain <- createDataPartition(train$Item_Outlet_Sales,p=0.8,list=FALSE)
 train_fortrain = train[inTrain,]
 train_fortest=train[-inTrain,]
+
+train_fortrain$Item_Identifier <- NULL
+train_fortest$Item_Identifier <- NULL
+train_fortrain$IsTrain <- NULL
+train_fortest$IsTrain <- NULL
 
 linearmodel <- lm(data=train_fortrain,Item_Outlet_Sales ~ Item_Weight +  Item_Fat_Content + Item_Visibility +
                     Item_Type + Item_MRP + Outlet_Identifier + Outlet_Size + Outlet_Location_Type +
@@ -306,7 +304,8 @@ train.data <- data.frame(Item_Outlet_Sales = train_fortrain$Item_Outlet_Sales, p
 train.data <- train.data[,1:31]
 
 
-pca.linearmodel <- lm(data=train.data,Item_Outlet_Sales ~ .)
+#pca.linearmodel <- lm(data=train.data,Item_Outlet_Sales ~ .)
+#pca.randomforest <- randomForest(data=train.data,Item_Outlet_Sales ~ .)
 
 pca.train_fortest <- dummy.data.frame(pca.train_fortest, names = c("Item_Fat_Content","Item_Type",
                                                                      "Outlet_Establishment_Year","Outlet_Size",
@@ -315,41 +314,129 @@ test.data <- predict(prin_comp, newdata = pca.train_fortest)
 test.data <- as.data.frame(test.data)
 
 test.data <- test.data[,1:30]
-Item_Outlet_Sales_Predict<- predict(pca.linearmodel,  test.data)
+#Item_Outlet_Sales_Predict<- predict(pca.linearmodel,  test.data)
+#Item_Outlet_Sales_Predict<- predict(pca.randomforest,  test.data)
 
-RMSE(pred= Item_Outlet_Sales_Predict, obs=train_fortest$Item_Outlet_Sales) #1159.809
+RMSE(pred= Item_Outlet_Sales_Predict, obs=train_fortest$Item_Outlet_Sales) #1159.809(lm) 1163.789(Random Forest. Its more than RMSE of lm !!!)
+#RMSE without PCA was 1159.762(lm).1146 (Random Forest) . 
+#Lets check the actual test data
+test$Item_Outlet_Sales <- NULL
+pca.test <- dummy.data.frame(test, names = c("Item_Fat_Content","Item_Type",
+                                                                   "Outlet_Establishment_Year","Outlet_Size",
+                                                                   "Outlet_Location_Type","Outlet_Type","Outlet_Identifier","Item_Identifier_Code"))
+test.data <- predict(prin_comp, newdata = pca.test)
+test.data <- as.data.frame(test.data)
 
-
-linearmodel_caret <- train(data=train_fortrain,Item_Outlet_Sales ~ Item_Weight +  Item_Fat_Content + Item_Visibility +
-                             Item_Type + Item_MRP + Outlet_Identifier + Outlet_Size + Outlet_Location_Type +
-                             Outlet_Type + Item_Identifier_Code + AgeOfOutlet, method = "lm")
-
-
-durbinWatsonTest(linearmodel) #To test Independence of Prdictors
-#p-value=0.682 which means the predictors are independent This test is applicable for Time Series data
-
-
-subsets <- c(1:5, 10)
-set.seed(10)
-
-ctrl <- rfeControl(functions = lmFuncs,
-                   method = "repeatedcv",
-                   repeats = 5,
-                   verbose = FALSE)
-sales <- train_fortrain$Item_Outlet_Sales
-predictors <- subset(train_fortrain, select=-c(Item_Outlet_Sales))
-
-# do it in parallel
-cl <- makeCluster(detectCores()); registerDoParallel(cl)
-lmProfile <- rfe(x = predictors,
-                 y = sales,
-                 sizes = subsets,
-                 rfeControl = ctrl)
-stopCluster(cl); registerDoSEQ();
+test.data <- test.data[,1:30]
+#Item_Outlet_Sales_Predict<- predict(pca.linearmodel,  test.data)
+Item_Outlet_Sales_Predict<- predict(pca.randomforest,  test.data)
 
 
+# linearmodel_caret <- train(data=train_fortrain,Item_Outlet_Sales ~ Item_Weight +  Item_Fat_Content + Item_Visibility +
+#                              Item_Type + Item_MRP + Outlet_Identifier + Outlet_Size + Outlet_Location_Type +
+#                              Outlet_Type + Item_Identifier_Code + AgeOfOutlet, method = "lm")
+# 
+# 
+# durbinWatsonTest(linearmodel) #To test Independence of Prdictors
+# #p-value=0.682 which means the predictors are independent This test is applicable for Time Series data
+# 
+# 
+# subsets <- c(1:5, 10)
+# set.seed(10)
+# 
+# ctrl <- rfeControl(functions = lmFuncs,
+#                    method = "repeatedcv",
+#                    repeats = 5,
+#                    verbose = FALSE)
+# sales <- train_fortrain$Item_Outlet_Sales
+# predictors <- subset(train_fortrain, select=-c(Item_Outlet_Sales))
+# 
+# # do it in parallel
+# cl <- makeCluster(detectCores()); registerDoParallel(cl)
+# lmProfile <- rfe(x = predictors,
+#                  y = sales,
+#                  sizes = subsets,
+#                  rfeControl = ctrl)
+# stopCluster(cl); registerDoSEQ();
 
 
+###XGBoost
+xgb.train_fortrain <- train_fortrain
+xgb.train_fortest <- train_fortest
+
+xgb.train_fortrain$Item_Identifier <- NULL
+xgb.train_fortrain$IsTrain <- NULL
+xgb.train_fortrain_ItemOutletSales <- xgb.train_fortrain$Item_Outlet_Sales
+xgb.train_fortrain$Item_Outlet_Sales <- NULL
+
+xgb.train_fortest$Item_Identifier <- NULL
+xgb.train_fortest$IsTrain <- NULL
+xgb.train_fortest_ItemOutletSales <- xgb.train_fortest$Item_Outlet_Sales
+#xgb.train_fortest$Item_Outlet_Sales <- NULL
+
+
+
+xgb.train_fortrain <- dummy.data.frame(xgb.train_fortrain, names = c("Item_Fat_Content","Item_Type",
+                                                                     "Outlet_Establishment_Year","Outlet_Size",
+                                                                     "Outlet_Location_Type","Outlet_Type","Outlet_Identifier","Item_Identifier_Code"))
+#xgb.train_fortrain <- xgb.DMatrix(data.matrix (xgb.train_fortrain),label =xgb.train_fortrain_ItemOutletSales)
+
+#Cross Validation
+# xgb.crossValidation <- xgb.cv(data=xgb.train_fortrain,nrounds=1000,objective="reg:linear" ,
+#                               nfold=10, eta= 0.01, early.stop.round = 4,maximize=FALSE)
+# xgb_model <- xgboost(data=xgb.train_fortrain,nrounds=330,objective="reg:linear",eta=0.01 )
+
+#Tuning XGBoost using Caret
+
+# pack the training control parameters
+xgb.cv.ctrl <- trainControl(method = "repeatedcv", repeats = 1,number = 5, 
+                        #summaryFunction = twoClassSummary,
+                        #classProbs = TRUE,
+                        allowParallel=T)
+
+xgb.grid <- expand.grid(nrounds = 1000,
+                        eta = c(0.01,0.05,0.1),
+                        max_depth = c(2,4,6,8,10,14),
+                        gamma=1,
+                        colsample_bytree=1,
+                        min_child_weight=1
+)
+
+xgb_train_1 = train(
+  x=as.matrix(xgb.train_fortrain),
+  y=xgb.train_fortrain_ItemOutletSales,
+  #data= xgb.train_fortrain,
+  trControl = xgb.cv.ctrl,
+  tuneGrid = xgb.grid,
+  method = "xgbTree",
+  nthread=4,
+  metric="RMSE",
+  #early_stopping_rounds = 4,
+  maximize=FALSE
+)
+#Prediction
+xgb.train_fortest <- dummy.data.frame(xgb.train_fortest, names = c("Item_Fat_Content","Item_Type",
+                                                                     "Outlet_Establishment_Year","Outlet_Size",
+                                                                     "Outlet_Location_Type","Outlet_Type","Outlet_Identifier","Item_Identifier_Code"))
+xgb.train_fortest <- xgb.DMatrix(data.matrix (xgb.train_fortest),label =xgb.train_fortest$Item_Outlet_Sales)
+
+#pred <- predict(xgb_model,xgb.train_fortest)
+pred <- predict(xgb_train_1$finalModel,xgb.train_fortest) #Using model generated from caret CV
+
+RMSE(pred,train_fortest$Item_Outlet_Sales) #1134 Slightly less than the RMSE of lm()
+#1122 using model generated from Caret CV
+
+#Predicting the actual test data
+xgb.predict.test <- test
+xgb.predict.test$Item_Identifier <- NULL
+xgb.predict.test$IsTrain <- NULL
+xgb.predict.test$Item_Outlet_Sales <- NULL
+xgb.predict.test <- dummy.data.frame(xgb.predict.test, names = c("Item_Fat_Content","Item_Type",
+                                                                   "Outlet_Establishment_Year","Outlet_Size",
+                                                                   "Outlet_Location_Type","Outlet_Type","Outlet_Identifier","Item_Identifier_Code"))
+xgb.predict.test <- xgb.DMatrix(data.matrix (xgb.predict.test))
+#Item_Outlet_Sales_Predict <- predict(xgb_model,xgb.predict.test)
+Item_Outlet_Sales_Predict <- predict(xgb_train_1$finalModel,xgb.predict.test) #Using model generated from caret CV
 #Random Forest
 # m1 <- randomForest(Item_Outlet_Sales ~ Item_MRP, data = train)
 # m2 <- update(m1, ~ . + Item_Type)
@@ -361,7 +448,7 @@ stopCluster(cl); registerDoSEQ();
 # mtable(m1, m2, m3, m4, m5,m6)
 # m <- randomForest(data = train_fortrain, Item_Outlet_Sales ~ Item_Weight +  Item_Fat_Content + Item_Visibility +
 #                     Item_Type + Item_MRP + Outlet_Identifier + Outlet_Size + Outlet_Location_Type +
-#                     Outlet_Type + Item_Identifier_Code + AgeOfOutlet)  
+#                     Outlet_Type + Item_Identifier_Code + AgeOfOutlet)
 # 
 # summary(m)
 # # m
@@ -385,10 +472,4 @@ submission_df <- data.frame (Item_Identifier= test$Item_Identifier,
 write.csv(submission_df,file="D:/amit/Data Science/AnalyticsVidya/BigMart3/submission_new.csv",row.names=FALSE)
 
 
-#rpart Decision Tree #The score for this is less than the score of random forest
-Item_Outlet_Sales_Actuals <- train$Item_Outlet_Sales
-train$Item_Outlet_Sales <- NULL
-rpartmodel <- rpart(data = train, Item_Outlet_Sales ~ Item_Weight +  Item_Fat_Content + Item_Visibility +
-                    Item_Type + Item_MRP + Outlet_Identifier + Outlet_Size + Outlet_Location_Type +
-                    Outlet_Type + Item_Identifier_Code + AgeOfOutlet)
-Item_Outlet_Sales_Predict <- predict(rpartmodel,test)
+
