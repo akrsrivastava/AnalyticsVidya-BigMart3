@@ -394,9 +394,9 @@ xgb.cv.ctrl <- trainControl(method = "repeatedcv", repeats = 1,number = 5,
                         #classProbs = TRUE,
                         allowParallel=T)
 
-xgb.grid <- expand.grid(nrounds = 1000,
-                        eta = c(0.01,0.05,0.1),
-                        max_depth = c(2,4,6,8,10,14),
+xgb.grid <- expand.grid(nrounds = seq(2000,4000,500),
+                        eta = c(0.001,0.002,0.003,0.004,0.005,0.01),
+                        max_depth = c(2,4,6,8),
                         gamma=1,
                         colsample_bytree=1,
                         min_child_weight=1
